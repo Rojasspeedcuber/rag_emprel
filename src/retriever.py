@@ -39,7 +39,7 @@ def _search(corpus: Corpus, query: str, top_k: int = TOP_K) -> list[RetrievedChu
 
 def _rerank(query: str, results: list[RetrievedChunk]) -> list[RetrievedChunk]:
     """Reordena os trechos com o reranker da NVIDIA. Se a API falhar, mantém a ordem original."""
-    if not results:
+    if not results or not RERANKER_MODEL:
         return results
     try:
         resp = requests.post(

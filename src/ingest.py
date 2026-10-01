@@ -108,8 +108,9 @@ def chunk_text(text: str, source: str, page: int) -> list[Chunk]:
 
 
 def _files_hash() -> str:
-    """Hash do conjunto de PDFs em UPLOAD_DIR (nome + conteúdo)."""
+    """Hash do conjunto de PDFs em UPLOAD_DIR (nome + conteúdo) + modelo de embedding."""
     h = hashlib.sha256()
+    h.update(EMBEDDING_MODEL.encode("utf-8"))
     for p in sorted(UPLOAD_DIR.glob("*.pdf")):
         h.update(p.name.encode("utf-8"))
         h.update(p.read_bytes())

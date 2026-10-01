@@ -11,9 +11,9 @@ INDEX_DIR = BASE_DIR / os.getenv("INDEX_DIR", "data/index")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 
-LLM_MODEL = os.getenv("NVIDIA_LLM_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1")
-EMBEDDING_MODEL = os.getenv("NVIDIA_EMBEDDING_MODEL", "nvidia/nv-embedqa-mistral-7b-v2")
-RERANKER_MODEL = os.getenv("NVIDIA_RERANKER_MODEL", "nvidia/llama-3.2-nv-rerankqa-1b-v2")
+LLM_MODEL = os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+EMBEDDING_MODEL = os.getenv("NVIDIA_EMBEDDING_MODEL", "nvidia/nemotron-3-embed-1b")
+RERANKER_MODEL = os.getenv("NVIDIA_RERANKER_MODEL", "")
 
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "150"))
