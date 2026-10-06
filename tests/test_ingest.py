@@ -1,3 +1,8 @@
+from pathlib import Path
+
+import numpy as np
+
+from src import ingest
 from src.ingest import sanitize_filename, chunk_text, Chunk, ARGS_STR_CHARS
 
 
@@ -45,3 +50,73 @@ def test_chunk_text_overlap():
     if len(chunks) > 1:
         tail = chunks[0].text[-60:]
         assert tail in chunks[1].text  # overlap presente
+
+
+def configure_document_dirs(monkeypatch, tmp_path):
+    seed = tmp_path / "seed"
+    uploads = tmp_path / "uploads"
+    index = tmp_path / "index"
+    for directory in (seed, uploads, index):
+        directory.mkdir()
+    monkeypatch.setattr(ingest, "SEED_DIR", seed)
+    monkeypatch.setattr(ingest, "UPLOAD_DIR", uploads)
+    monkeypatch.setattr(ingest, "INDEX_DIR", index)
+    return seed, uploads, index
+
+
+def test_list_documents_separates_seed_and_uploads(monkeypatch, tmp_path):
+    seed, uploads, _ = configure_document_dirs(monkeypatch, tmp_path)
+    (seed / "base.pdf").write_bytes(b"base")
+    (uploads / "user.pdf").write_bytes(b"user")
+
+    assert ingest.list_seed_documents() == ["base.pdf"]
+    assert ingest.list_uploads() == ["user.pdf"]
+
+
+def test_duplicate_upload_does_not_shadow_seed(monkeypatch, tmp_path):
+    seed, _, _ = configure_document_dirs(monkeypatch, tmp_path)
+    (seed / "base.pdf").write_bytes(b"base")
+
+    saved = ingest.save_upload(b"upload", "base.pdf")
+
+    assert saved.name == "base_1.pdf"
+
+
+def test_build_corpus_combines_seed_and_uploads(monkeypatch, tmp_path):
+    seed, uploads, _ = configure_document_dirs(monkeypatch, tmp_path)
+    (seed / "base.pdf").write_bytes(b"base")
+    (uploads / "user.pdf").write_bytes(b"user")
+    monkeypatch.setattr(ingest, "extract_pages", lambda path: [(1, path.stem)])
+    monkeypatch.setattr(
+        ingest,
+        "embed_documents",
+        lambda texts: np.ones((len(texts), 2), dtype="float32"),
+    )
+
+    corpus = ingest.build_corpus()
+
+    assert {chunk.source for chunk in corpus.chunks} == {"base.pdf", "user.pdf"}
+    assert corpus.errors == []
+
+
+def test_build_corpus_reports_one_bad_pdf_and_keeps_others(monkeypatch, tmp_path):
+    seed, uploads, _ = configure_document_dirs(monkeypatch, tmp_path)
+    (seed / "good.pdf").write_bytes(b"good")
+    (uploads / "bad.pdf").write_bytes(b"bad")
+
+    def extract(path: Path):
+        if path.name == "bad.pdf":
+            raise ValueError("invalid PDF")
+        return [(1, "valid text")]
+
+    monkeypatch.setattr(ingest, "extract_pages", extract)
+    monkeypatch.setattr(
+        ingest,
+        "embed_documents",
+        lambda texts: np.ones((len(texts), 2), dtype="float32"),
+    )
+
+    corpus = ingest.build_corpus()
+
+    assert [chunk.source for chunk in corpus.chunks] == ["good.pdf"]
+    assert corpus.errors == ["bad.pdf: invalid PDF"]
