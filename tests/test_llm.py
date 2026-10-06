@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -40,3 +41,41 @@ def test_get_provider_config_requires_selected_key(monkeypatch):
 
     with pytest.raises(llm.LLMConfigurationError, match="OPENROUTER_API_KEY"):
         llm.get_provider_config()
+
+
+def test_answer_question_uses_selected_provider(monkeypatch):
+    completion = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="Resposta [doc.pdf, p. 1]"))]
+    )
+    create = Mock(return_value=completion)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    config = llm.ProviderConfig("openrouter", "secret", "https://router/v1", "model")
+    monkeypatch.setattr(llm, "get_provider_config", lambda: config)
+    monkeypatch.setattr(llm, "_get_client", lambda selected: client)
+    retrieved = [
+        SimpleNamespace(
+            chunk=SimpleNamespace(text="Evidencia", source="doc.pdf", page=1)
+        )
+    ]
+
+    answer = llm.answer_question("Pergunta?", retrieved)
+
+    assert answer == "Resposta [doc.pdf, p. 1]"
+    kwargs = create.call_args.kwargs
+    assert kwargs["model"] == "model"
+    assert kwargs["temperature"] == llm.TEMPERATURE
+    assert kwargs["top_p"] == llm.TOP_P
+
+
+def test_answer_question_translates_provider_failure(monkeypatch):
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("down")))
+        )
+    )
+    config = llm.ProviderConfig("openai", "secret", "https://api.openai.com/v1", "model")
+    monkeypatch.setattr(llm, "get_provider_config", lambda: config)
+    monkeypatch.setattr(llm, "_get_client", lambda selected: client)
+
+    with pytest.raises(llm.LLMProviderError, match="openai"):
+        llm.answer_question("Pergunta?", [])
