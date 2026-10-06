@@ -10,7 +10,8 @@ from src.config import (
     TOP_K,
     SIMILARITY_THRESHOLD,
 )
-from src.ingest import Corpus, Chunk, embed_query
+from src.embeddings import embed_query
+from src.ingest import Corpus, Chunk
 
 FALLBACK_MESSAGE = "Não encontrei essa informação nos documentos enviados."
 EMPTY_CORPUS_MESSAGE = "Nenhum documento foi enviado ainda. Envie PDFs pela barra lateral para começar."

@@ -7,17 +7,15 @@ from pathlib import Path
 import faiss
 import numpy as np
 from pypdf import PdfReader
-from openai import OpenAI
 
 from src.config import (
     UPLOAD_DIR,
     INDEX_DIR,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
-    NVIDIA_API_KEY,
-    NVIDIA_BASE_URL,
     EMBEDDING_MODEL,
 )
+from src.embeddings import embed_documents
 
 ARGS_STR_CHARS = 4  # ~1 token ≈ 4 chars
 
@@ -117,32 +115,6 @@ def _files_hash() -> str:
     return h.hexdigest()
 
 
-def _get_client() -> OpenAI:
-    return OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL)
-
-
-def _embed_texts(texts: list[str], input_type: str = "passage") -> np.ndarray:
-    """Gera embeddings em lote via API NVIDIA. Retorna matriz (n, dim) L2-normalizada."""
-    client = _get_client()
-    all_vectors: list[list[float]] = []
-    batch = 32
-    for i in range(0, len(texts), batch):
-        resp = client.embeddings.create(
-            input=texts[i : i + batch],
-            model=EMBEDDING_MODEL,
-            encoding_format="float",
-            extra_body={"input_type": input_type, "truncate": "END"},
-        )
-        all_vectors.extend(item.embedding for item in resp.data)
-    mat = np.array(all_vectors, dtype="float32")
-    faiss.normalize_L2(mat)
-    return mat
-
-
-def embed_query(query: str) -> np.ndarray:
-    return _embed_texts([query], input_type="query")
-
-
 def build_corpus() -> Corpus:
     """(Re)constrói o corpus a partir de UPLOAD_DIR. Lida com pasta vazia."""
     chunks: list[Chunk] = []
@@ -153,7 +125,7 @@ def build_corpus() -> Corpus:
 
     index = None
     if chunks:
-        vectors = _embed_texts([c.text for c in chunks])
+        vectors = embed_documents([chunk.text for chunk in chunks])
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)
 
