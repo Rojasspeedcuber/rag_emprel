@@ -54,11 +54,24 @@ def test_below_threshold_returns_fallback():
     assert msg == FALLBACK_MESSAGE
 
 
-def test_above_threshold_returns_chunks_without_rerank_when_api_fails():
-    # rerank falha (requests não configurado) → mantém resultados
-    with patch("src.retriever._search", fake_search), \
-         patch("src.retriever._rerank", side_effect=lambda q, r: r):
+def test_above_threshold_returns_ranked_chunks():
+    with patch("src.retriever._search", fake_search):
         chunks, msg = retrieve(make_corpus(), "pergunta")
+
     assert msg is None
-    assert len(chunks) == 2
-    assert chunks[0].similarity == 0.9
+    assert [chunk.similarity for chunk in chunks] == [0.9, 0.5]
+
+
+def test_threshold_accepts_exact_boundary():
+    boundary = [
+        RetrievedChunk(
+            chunk=Chunk(text="t", source="d.pdf", page=1),
+            similarity=0.35,
+        )
+    ]
+    with patch("src.retriever._search", return_value=boundary), \
+         patch("src.retriever.SIMILARITY_THRESHOLD", 0.35):
+        chunks, msg = retrieve(make_corpus(), "pergunta")
+
+    assert chunks == boundary
+    assert msg is None
