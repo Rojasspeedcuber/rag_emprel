@@ -9,7 +9,7 @@ SEED_DIR = BASE_DIR / os.getenv("SEED_DIR", "data/seed")
 UPLOAD_DIR = BASE_DIR / os.getenv("UPLOAD_DIR", "data/uploads")
 INDEX_DIR = BASE_DIR / os.getenv("INDEX_DIR", "data/index")
 
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
 
@@ -28,7 +28,7 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "150"))
 TOP_K = int(os.getenv("TOP_K", "5"))
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.45"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0"))
 TOP_P = float(os.getenv("TOP_P", "0.1"))
 

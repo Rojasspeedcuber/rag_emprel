@@ -21,8 +21,8 @@ def _encode(texts: list[str]) -> np.ndarray:
 
 
 def embed_documents(texts: list[str]) -> np.ndarray:
-    return _encode([f"passage: {text}" for text in texts])
+    return _encode(list(texts))
 
 
 def embed_query(query: str) -> np.ndarray:
-    return _encode([f"query: {query}"])
+    return _encode([query])
