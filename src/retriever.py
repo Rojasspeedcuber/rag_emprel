@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 
 import numpy as np
@@ -8,6 +9,8 @@ from src.config import (
 )
 from src.embeddings import embed_query
 from src.ingest import Corpus, Chunk
+
+_CODE = re.compile(r"\b[A-Z]{1,4}\d{2,6}\b", re.IGNORECASE)
 
 FALLBACK_MESSAGE = "Não encontrei essa informação nos documentos enviados."
 EMPTY_CORPUS_MESSAGE = "Nenhum documento foi enviado ainda. Envie PDFs pela barra lateral para começar."
@@ -33,17 +36,56 @@ def _search(corpus: Corpus, query: str, top_k: int = TOP_K) -> list[RetrievedChu
     return results
 
 
+def _codes(text: str) -> list[str]:
+    found = []
+    for match in _CODE.finditer(text):
+        code = match.group(0).upper()
+        if code not in found:
+            found.append(code)
+    return found
+
+
+def _dedupe(results: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    seen = set()
+    unique = []
+    for item in results:
+        key = re.sub(r"\s+", " ", item.chunk.text).strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
+
+
+def _lexical(corpus: Corpus, codes: list[str]) -> list[RetrievedChunk]:
+    scored = []
+    for chunk in corpus.chunks:
+        text = chunk.text.upper()
+        count = sum(text.count(code) for code in codes)
+        if count:
+            scored.append((count, RetrievedChunk(chunk=chunk, similarity=1.0)))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return _dedupe([item[1] for item in scored])
+
+
 def retrieve(corpus: Corpus, query: str) -> tuple[list[RetrievedChunk], str | None]:
     """
     Retorna (trechos, mensagem_de_fallback).
     - corpus vazio → ([], EMPTY_CORPUS_MESSAGE)
+    - código exato no texto → trechos que contêm o código, sem limiar vetorial
     - abaixo do limiar → ([], FALLBACK_MESSAGE)
     - caso contrário → (trechos, None)
     """
     if corpus.empty:
         return [], EMPTY_CORPUS_MESSAGE
 
-    results = _search(corpus, query)
+    codes = _codes(query)
+    if codes:
+        lexical = _lexical(corpus, codes)[:TOP_K]
+        if lexical:
+            return lexical, None
+
+    results = _dedupe(_search(corpus, query, top_k=TOP_K * 3))[:TOP_K]
     if not results:
         return [], FALLBACK_MESSAGE
 

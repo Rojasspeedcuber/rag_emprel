@@ -1,6 +1,6 @@
 # rag_emprel
 
-Chat RAG (Retrieval-Augmented Generation) em Streamlit para perguntar sobre PDFs, com **não alucinação**: só responde com base nos trechos recuperados dos documentos, cita as fontes e diz "Não encontrei essa informação nos documentos enviados." quando não há base. As respostas são geradas pelo provedor escolhido no `.env` (OpenRouter, NVIDIA NIM ou OpenAI).
+Chat RAG (Retrieval-Augmented Generation) em Streamlit para perguntar sobre PDFs, com **não alucinação**: só responde com base nos trechos recuperados dos documentos, cita as fontes e diz "Não encontrei essa informação nos documentos enviados." quando não há base. As respostas são geradas pelo provedor escolhido no `.env` (OpenRouter, NVIDIA NIM, OpenAI ou Ollama).
 
 ## Guardrails anti-alucinação
 
@@ -14,7 +14,7 @@ Chat RAG (Retrieval-Augmented Generation) em Streamlit para perguntar sobre PDFs
 ## Pré-requisitos
 
 - Python 3.10+
-- Chave de API do provedor escolhido (`OPENROUTER_API_KEY`, `NVIDIA_API_KEY` ou `OPENAI_API_KEY`). Apenas a chave do provedor selecionado em `LLM_PROVIDER` é necessária para gerar respostas; indexação e recusa funcionam sem nenhuma chave.
+- Chave de API do provedor escolhido (`OPENROUTER_API_KEY`, `NVIDIA_API_KEY` ou `OPENAI_API_KEY`). Apenas a chave do provedor selecionado em `LLM_PROVIDER` é necessária para gerar respostas; indexação e recusa funcionam sem nenhuma chave. Se `LLM_PROVIDER=ollama`, não é necessária chave, mas o servidor Ollama deve estar em execução (`ollama serve`).
 
 ## Instalação
 
@@ -30,7 +30,7 @@ Crie um arquivo `.env` a partir do modelo:
 copy .env.example .env
 ```
 
-Edite `.env`, defina `LLM_PROVIDER` (`openrouter`, `nvidia` ou `openai`) e preencha a chave correspondente.
+Edite `.env`, defina `LLM_PROVIDER` (`openrouter`, `nvidia`, `openai` ou `ollama`) e preencha a chave correspondente. Para Ollama, basta ter o servidor local rodando (padrão `http://localhost:11434/v1`) e escolher um modelo com `OLLAMA_MODEL` (ex.: `qwen3:4b`). Também é possível gerar **embeddings** com Ollama definindo `EMBEDDING_MODEL=ollama:<modelo>` (ex.: `ollama:nomic-embed-text`); nesse caso o índice é reconstruído automaticamente.
 
 ## Execução
 
@@ -56,7 +56,7 @@ rag_emprel/
 │   ├── embeddings.py   # Embeddings locais multilingues (MiniLM)
 │   ├── ingest.py       # Seed + uploads, extração, chunking, índice FAISS com cache
 │   ├── retriever.py    # Busca vetorial + limiar (recusa determinística)
-│   ├── llm.py          # Geração via OpenRouter / NVIDIA NIM / OpenAI
+│   ├── llm.py          # Geração via OpenRouter / NVIDIA NIM / OpenAI / Ollama
 │   ├── prompts.py      # Prompt anti-alucinação
 │   └── service.py      # Orquestração: recusa antes do LLM, fontes da resposta
 ├── data/
@@ -78,7 +78,7 @@ Os testes não fazem chamadas de rede nem baixam modelos.
 
 ## Observações
 
-- Os embeddings são gerados **localmente** com `paraphrase-multilingual-MiniLM-L12-v2` (configurável via `EMBEDDING_MODEL`). A primeira execução baixa o modelo; as demais usam o cache local do HuggingFace.
+- Os embeddings são gerados **localmente** com `paraphrase-multilingual-MiniLM-L12-v2` (configurável via `EMBEDDING_MODEL`). A primeira execução baixa o modelo; as demais usam o cache local do HuggingFace. Alternativa: defina `EMBEDDING_MODEL=ollama:<modelo>` para usar a API local do Ollama.
 - O `SIMILARITY_THRESHOLD` padrão (0.45) foi calibrado empiricamente para esse modelo: perguntas fora do acervo ficam abaixo e perguntas suportadas ficam acima. Ao trocar o modelo de embedding, recalibre (modelos como E5 comprimem as similaridades e exigem outro valor).
 - O índice FAISS é cacheado em `data/index/` e reconstruído quando muda o hash dos PDFs (seed + uploads), dos parâmetros de chunking ou do modelo de embedding.
 - PDFs escaneados (sem camada de texto) não geram trechos; um PDF inválido é reportado individualmente sem invalidar os demais.

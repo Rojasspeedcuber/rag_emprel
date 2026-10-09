@@ -7,6 +7,8 @@ from src.config import (
     NVIDIA_API_KEY,
     NVIDIA_BASE_URL,
     NVIDIA_LLM_MODEL,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
     OPENAI_MODEL,
@@ -36,14 +38,16 @@ class ProviderConfig:
 
 
 def get_provider_config() -> ProviderConfig:
+    # ollama é local e não exige chave real; o endpoint compatível aceita uma fictícia.
     providers = {
         "openrouter": (OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODEL, "OPENROUTER_API_KEY"),
         "nvidia": (NVIDIA_API_KEY, NVIDIA_BASE_URL, NVIDIA_LLM_MODEL, "NVIDIA_API_KEY"),
         "openai": (OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, "OPENAI_API_KEY"),
+        "ollama": ("ollama", OLLAMA_BASE_URL, OLLAMA_MODEL, None),
     }
     if LLM_PROVIDER not in providers:
         raise LLMConfigurationError(
-            "LLM_PROVIDER deve ser openrouter, nvidia ou openai."
+            "LLM_PROVIDER deve ser openrouter, nvidia, openai ou ollama."
         )
     api_key, base_url, model, key_name = providers[LLM_PROVIDER]
     if not api_key:
@@ -91,6 +95,7 @@ def answer_question(question: str, retrieved_chunks, history: list[dict] | None 
     except LLMConfigurationError:
         raise
     except Exception as exc:
+        hint = " O servidor Ollama está em execução?" if config.name == "ollama" else ""
         raise LLMProviderError(
-            f"O provedor {config.name} está indisponível no momento."
+            f"O provedor {config.name} está indisponível no momento.{hint}"
         ) from exc

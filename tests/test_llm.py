@@ -28,6 +28,19 @@ def test_get_provider_config(monkeypatch, provider, key_name, url_name, model_na
     assert config.model == f"{provider}-model"
 
 
+def test_get_provider_config_ollama(monkeypatch):
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(llm, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setattr(llm, "OLLAMA_MODEL", "qwen3:4b")
+
+    config = llm.get_provider_config()
+
+    assert config.name == "ollama"
+    assert config.api_key  # chave fictícia aceita pelo endpoint compatível
+    assert config.base_url == "http://localhost:11434/v1"
+    assert config.model == "qwen3:4b"
+
+
 def test_get_provider_config_rejects_unknown_provider(monkeypatch):
     monkeypatch.setattr(llm, "LLM_PROVIDER", "other")
 
@@ -78,4 +91,17 @@ def test_answer_question_translates_provider_failure(monkeypatch):
     monkeypatch.setattr(llm, "_get_client", lambda selected: client)
 
     with pytest.raises(llm.LLMProviderError, match="openai"):
+        llm.answer_question("Pergunta?", [])
+
+
+def test_answer_question_ollama_failure_mentions_server(monkeypatch):
+    def fail(**kwargs):
+        raise RuntimeError("connection refused")
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=fail)))
+    config = llm.ProviderConfig("ollama", "ollama", "http://localhost:11434/v1", "qwen3:4b")
+    monkeypatch.setattr(llm, "get_provider_config", lambda: config)
+    monkeypatch.setattr(llm, "_get_client", lambda selected: client)
+
+    with pytest.raises(llm.LLMProviderError, match="Ollama"):
         llm.answer_question("Pergunta?", [])
