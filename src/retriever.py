@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -6,11 +7,13 @@ import requests
 from src.config import (
     NVIDIA_API_KEY,
     NVIDIA_BASE_URL,
-    RERANKER_MODEL,
     TOP_K,
     SIMILARITY_THRESHOLD,
 )
-from src.ingest import Corpus, Chunk, embed_query
+from src.embeddings import embed_query
+from src.ingest import Corpus, Chunk
+
+RERANKER_MODEL = os.getenv("NVIDIA_RERANKER_MODEL", "")
 
 FALLBACK_MESSAGE = "Não encontrei essa informação nos documentos enviados."
 EMPTY_CORPUS_MESSAGE = "Nenhum documento foi enviado ainda. Envie PDFs pela barra lateral para começar."
