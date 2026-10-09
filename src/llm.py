@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from openai import OpenAI, OpenAIError
 from openai import OpenAI
 
 from src.config import (
@@ -38,6 +39,32 @@ class ProviderConfig:
 
 
 def get_provider_config() -> ProviderConfig:
+    providers = {
+        "openrouter": ProviderConfig(
+            "openrouter", OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODEL
+        ),
+        "nvidia": ProviderConfig(
+            "nvidia", NVIDIA_API_KEY, NVIDIA_BASE_URL, NVIDIA_LLM_MODEL
+        ),
+        "openai": ProviderConfig("openai", OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL),
+    }
+    api_key_names = {
+        "openrouter": "OPENROUTER_API_KEY",
+        "nvidia": "NVIDIA_API_KEY",
+        "openai": "OPENAI_API_KEY",
+    }
+
+    if LLM_PROVIDER not in providers:
+        raise LLMConfigurationError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
+
+    config = providers[LLM_PROVIDER]
+    if not config.api_key:
+        raise LLMConfigurationError(f"Missing {api_key_names[LLM_PROVIDER]}")
+    return config
+
+
+def _get_client() -> OpenAI:
+    return OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL)
     # ollama é local e não exige chave real; o endpoint compatível aceita uma fictícia.
     providers = {
         "openrouter": (OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODEL, "OPENROUTER_API_KEY"),
@@ -82,6 +109,8 @@ def answer_question(question: str, retrieved_chunks, history: list[dict] | None 
 
     config = get_provider_config()
     try:
+        resp = client.chat.completions.create(
+            model=NVIDIA_LLM_MODEL,
         response = _get_client(config).chat.completions.create(
             model=config.model,
             messages=messages,

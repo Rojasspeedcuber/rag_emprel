@@ -9,6 +9,7 @@ SEED_DIR = BASE_DIR / os.getenv("SEED_DIR", "data/seed")
 UPLOAD_DIR = BASE_DIR / os.getenv("UPLOAD_DIR", "data/uploads")
 INDEX_DIR = BASE_DIR / os.getenv("INDEX_DIR", "data/index")
 
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
@@ -35,5 +36,8 @@ SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.45"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0"))
 TOP_P = float(os.getenv("TOP_P", "0.1"))
 
+SEED_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+INDEX_DIR.mkdir(parents=True, exist_ok=True)
 for directory in (SEED_DIR, UPLOAD_DIR, INDEX_DIR):
     directory.mkdir(parents=True, exist_ok=True)

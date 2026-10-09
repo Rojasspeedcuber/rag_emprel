@@ -5,7 +5,6 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 import faiss
-import numpy as np
 from pypdf import PdfReader
 
 from src.config import (
@@ -117,6 +116,13 @@ def chunk_text(text: str, source: str, page: int) -> list[Chunk]:
 
 
 def _files_hash() -> str:
+    """Hash do conjunto de PDFs em UPLOAD_DIR (nome + conteúdo) + modelo de embedding."""
+    h = hashlib.sha256()
+    h.update(EMBEDDING_MODEL.encode("utf-8"))
+    for p in sorted(UPLOAD_DIR.glob("*.pdf")):
+        h.update(p.name.encode("utf-8"))
+        h.update(p.read_bytes())
+    return h.hexdigest()
     """Hash de todos os inputs do índice: modelo, parâmetros de divisão e PDFs (seed + uploads)."""
     digest = hashlib.sha256()
     for value in (EMBEDDING_MODEL, str(CHUNK_SIZE), str(CHUNK_OVERLAP)):
@@ -143,6 +149,7 @@ def build_corpus() -> Corpus:
 
     index = None
     if chunks:
+        vectors = embed_documents([c.text for c in chunks])
         vectors = embed_documents([chunk.text for chunk in chunks])
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)

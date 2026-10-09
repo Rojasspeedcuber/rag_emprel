@@ -1,15 +1,19 @@
+import os
 import re
 from dataclasses import dataclass
 
 import numpy as np
 
 from src.config import (
+    NVIDIA_API_KEY,
+    NVIDIA_BASE_URL,
     TOP_K,
     SIMILARITY_THRESHOLD,
 )
 from src.embeddings import embed_query
 from src.ingest import Corpus, Chunk
 
+RERANKER_MODEL = os.getenv("NVIDIA_RERANKER_MODEL", "")
 _CODE = re.compile(r"\b[A-Z]{1,4}\d{2,6}\b", re.IGNORECASE)
 
 FALLBACK_MESSAGE = "Não encontrei essa informação nos documentos enviados."
@@ -93,4 +97,5 @@ def retrieve(corpus: Corpus, query: str) -> tuple[list[RetrievedChunk], str | No
     if best < SIMILARITY_THRESHOLD:
         return [], FALLBACK_MESSAGE
 
+    return _rerank(query, results), None
     return results, None
