@@ -4,4 +4,6 @@ __pycache__/
 .env
 data/uploads/*.pdf
 data/index/
+!data/seed/
+!data/seed/*.pdf
 .pytest_cache/

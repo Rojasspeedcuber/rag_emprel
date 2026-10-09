@@ -54,11 +54,61 @@ def test_below_threshold_returns_fallback():
     assert msg == FALLBACK_MESSAGE
 
 
-def test_above_threshold_returns_chunks_without_rerank_when_api_fails():
-    # rerank falha (requests não configurado) → mantém resultados
-    with patch("src.retriever._search", fake_search), \
-         patch("src.retriever._rerank", side_effect=lambda q, r: r):
+def test_above_threshold_returns_ranked_chunks():
+    with patch("src.retriever._search", fake_search):
         chunks, msg = retrieve(make_corpus(), "pergunta")
+
     assert msg is None
-    assert len(chunks) == 2
-    assert chunks[0].similarity == 0.9
+    assert [chunk.similarity for chunk in chunks] == [0.9, 0.5]
+
+
+def test_code_query_returns_exact_chunk_and_drops_duplicate():
+    chunks = [
+        Chunk(text="recebo o erro E0312 ao emitir", source="a.pdf", page=119),
+        Chunk(text="O erro E3351 significa que o registro já foi inativado", source="faq.pdf", page=21),
+        Chunk(text="O erro E3351 significa que o registro já foi inativado", source="faq_copy.pdf", page=21),
+    ]
+    corpus = Corpus(chunks=chunks, index=object(), empty=False)
+
+    found, msg = retrieve(corpus, "O que significa o erro E3351?")
+
+    assert msg is None
+    assert len(found) == 1
+    assert found[0].chunk.page == 21
+    assert "E3351" in found[0].chunk.text
+
+
+def test_missing_code_falls_back_to_semantic_threshold():
+    with patch("src.retriever._search", fake_search_low_similarity):
+        chunks, msg = retrieve(make_corpus(), "O que significa o erro E9999?")
+
+    assert chunks == []
+    assert msg == FALLBACK_MESSAGE
+
+
+def test_semantic_results_drop_duplicate_text():
+    duplicated = [
+        RetrievedChunk(chunk=Chunk(text="mesmo", source="a.pdf", page=1), similarity=0.8),
+        RetrievedChunk(chunk=Chunk(text="mesmo", source="b.pdf", page=1), similarity=0.8),
+        RetrievedChunk(chunk=Chunk(text="outro", source="a.pdf", page=2), similarity=0.6),
+    ]
+    with patch("src.retriever._search", return_value=duplicated):
+        found, msg = retrieve(make_corpus(), "pergunta")
+
+    assert msg is None
+    assert [item.chunk.text for item in found] == ["mesmo", "outro"]
+
+
+def test_threshold_accepts_exact_boundary():
+    boundary = [
+        RetrievedChunk(
+            chunk=Chunk(text="t", source="d.pdf", page=1),
+            similarity=0.35,
+        )
+    ]
+    with patch("src.retriever._search", return_value=boundary), \
+         patch("src.retriever.SIMILARITY_THRESHOLD", 0.35):
+        chunks, msg = retrieve(make_corpus(), "pergunta")
+
+    assert chunks == boundary
+    assert msg is None

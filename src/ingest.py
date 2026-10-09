@@ -8,6 +8,7 @@ import faiss
 from pypdf import PdfReader
 
 from src.config import (
+    SEED_DIR,
     UPLOAD_DIR,
     INDEX_DIR,
     CHUNK_SIZE,
@@ -31,6 +32,7 @@ class Corpus:
     chunks: list[Chunk] = field(default_factory=list)
     index: faiss.IndexFlatIP | None = None
     empty: bool = True
+    errors: list[str] = field(default_factory=list)
 
 
 def sanitize_filename(name: str) -> str:
@@ -47,12 +49,13 @@ def save_upload(file_bytes: bytes, filename: str) -> Path:
     """Salva um PDF enviado em UPLOAD_DIR. Retorna o caminho salvo."""
     safe = sanitize_filename(filename)
     target = UPLOAD_DIR / safe
-    if target.exists():
+    used_names = set(list_seed_documents()) | set(list_uploads())
+    if target.name in used_names:
         stem, suffix = target.stem, target.suffix
-        i = 1
-        while target.exists():
-            target = UPLOAD_DIR / f"{stem}_{i}{suffix}"
-            i += 1
+        index = 1
+        while f"{stem}_{index}{suffix}" in used_names:
+            index += 1
+        target = UPLOAD_DIR / f"{stem}_{index}{suffix}"
     target.write_bytes(file_bytes)
     return target
 
@@ -65,8 +68,16 @@ def delete_upload(filename: str) -> bool:
     return False
 
 
+def list_seed_documents() -> list[str]:
+    return sorted(p.name for p in SEED_DIR.glob("*.pdf"))
+
+
 def list_uploads() -> list[str]:
     return sorted(p.name for p in UPLOAD_DIR.glob("*.pdf"))
+
+
+def _pdf_paths() -> list[Path]:
+    return sorted(SEED_DIR.glob("*.pdf")) + sorted(UPLOAD_DIR.glob("*.pdf"))
 
 
 def extract_pages(pdf_path: Path) -> list[tuple[int, str]]:
@@ -112,23 +123,38 @@ def _files_hash() -> str:
         h.update(p.name.encode("utf-8"))
         h.update(p.read_bytes())
     return h.hexdigest()
+    """Hash de todos os inputs do índice: modelo, parâmetros de divisão e PDFs (seed + uploads)."""
+    digest = hashlib.sha256()
+    for value in (EMBEDDING_MODEL, str(CHUNK_SIZE), str(CHUNK_OVERLAP)):
+        digest.update(value.encode("utf-8"))
+    for root_name, directory in (("seed", SEED_DIR), ("uploads", UPLOAD_DIR)):
+        for path in sorted(directory.glob("*.pdf")):
+            digest.update(root_name.encode("utf-8"))
+            digest.update(path.name.encode("utf-8"))
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
 
 
 def build_corpus() -> Corpus:
-    """(Re)constrói o corpus a partir de UPLOAD_DIR. Lida com pasta vazia."""
+    """(Re)constrói o corpus a partir de SEED_DIR + UPLOAD_DIR. Não aborta por um PDF inválido."""
     chunks: list[Chunk] = []
-    for pdf_path in sorted(UPLOAD_DIR.glob("*.pdf")):
-        for page_num, text in extract_pages(pdf_path):
-            if text:
-                chunks.extend(chunk_text(text, source=pdf_path.name, page=page_num))
+    errors: list[str] = []
+    for pdf_path in _pdf_paths():
+        try:
+            for page_num, text in extract_pages(pdf_path):
+                if text:
+                    chunks.extend(chunk_text(text, source=pdf_path.name, page=page_num))
+        except Exception as exc:
+            errors.append(f"{pdf_path.name}: {exc}")
 
     index = None
     if chunks:
         vectors = embed_documents([c.text for c in chunks])
+        vectors = embed_documents([chunk.text for chunk in chunks])
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)
 
-    return Corpus(chunks=chunks, index=index, empty=not chunks)
+    return Corpus(chunks=chunks, index=index, empty=not chunks, errors=errors)
 
 
 def _save_corpus(corpus: Corpus) -> None:
@@ -137,6 +163,10 @@ def _save_corpus(corpus: Corpus) -> None:
         encoding="utf-8",
     )
     (INDEX_DIR / "files.hash").write_text(_files_hash(), encoding="utf-8")
+    (INDEX_DIR / "errors.json").write_text(
+        json.dumps(corpus.errors, ensure_ascii=False),
+        encoding="utf-8",
+    )
     if corpus.index is not None:
         faiss.write_index(corpus.index, str(INDEX_DIR / "index.faiss"))
     elif (INDEX_DIR / "index.faiss").exists():
@@ -152,10 +182,16 @@ def _load_cached_corpus() -> Corpus | None:
     if hash_file.read_text(encoding="utf-8") != _files_hash():
         return None
     chunks = [Chunk(**c) for c in json.loads(chunks_file.read_text(encoding="utf-8"))]
+    errors_file = INDEX_DIR / "errors.json"
+    errors = (
+        json.loads(errors_file.read_text(encoding="utf-8"))
+        if errors_file.exists()
+        else []
+    )
     if chunks and index_file.exists():
         index = faiss.read_index(str(index_file))
-        return Corpus(chunks=chunks, index=index, empty=False)
-    return Corpus(chunks=[], index=None, empty=True)
+        return Corpus(chunks=chunks, index=index, empty=False, errors=errors)
+    return Corpus(chunks=[], index=None, empty=True, errors=errors)
 
 
 def get_corpus(force_rebuild: bool = False) -> Corpus:
