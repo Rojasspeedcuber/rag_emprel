@@ -40,6 +40,29 @@ def test_embed_documents_handles_empty_input():
     assert embeddings.embed_documents([]).shape == (0, 0)
 
 
+def test_lazy_alias_path_probe_does_not_import_torchvision():
+    import sys
+    import types
+
+    name = "transformers.models.fake.image_processing_fake_fast"
+    module = types.ModuleType(name)
+    module.__file__ = None
+    probed = []
+
+    def _getattr(attr):
+        probed.append(attr)
+        raise ModuleNotFoundError("No module named 'torchvision'")
+
+    module.__getattr__ = _getattr
+    sys.modules[name] = module
+    try:
+        embeddings._guard_transformers_lazy_aliases()
+        assert hasattr(module, "__path__")
+        assert probed == []
+    finally:
+        sys.modules.pop(name, None)
+
+
 def test_blocked_sklearn_finder_exposes_import_hooks():
     spec = embeddings._BlockedSklearnFinder().find_spec("sklearn.metrics", None)
     module = spec.loader.create_module(spec)

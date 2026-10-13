@@ -71,11 +71,30 @@ def _bypass_blocked_sklearn() -> None:
     sys.meta_path.insert(0, _BlockedSklearnFinder())
 
 
+def _guard_transformers_lazy_aliases() -> None:
+    """Evita que o file watcher do Streamlit importe módulos de visão.
+
+    O transformers 5 registra aliases ``image_processing_*_fast``. O watcher
+    chama ``hasattr(module, "__path__")`` em tudo que está em ``sys.modules``,
+    e esse acesso dispara o alias e exige torchvision — desnecessário para
+    embeddings de texto.
+    """
+    for name, module in list(sys.modules.items()):
+        if not isinstance(module, types.ModuleType):
+            continue
+        if "image_processing_" not in name or not name.endswith("_fast"):
+            continue
+        if "__path__" in module.__dict__:
+            continue
+        module.__path__ = []
+
+
 @lru_cache(maxsize=1)
 def _load_model():
     _bypass_blocked_sklearn()
     from sentence_transformers import SentenceTransformer
 
+    _guard_transformers_lazy_aliases()
     return SentenceTransformer(EMBEDDING_MODEL)
 
 
