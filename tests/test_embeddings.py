@@ -102,7 +102,7 @@ def test_is_ollama_model_detects_prefix(monkeypatch):
 
 def test_ollama_embed_uses_openai_compatible_api(monkeypatch):
     monkeypatch.setattr(embeddings, "EMBEDDING_MODEL", "ollama:nomic-embed-text")
-    monkeypatch.setattr(embeddings, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setattr(embeddings, "OLLAMA_BASE_URL", "https://ollama.com/v1")
     create = Mock(
         return_value=SimpleNamespace(
             data=[

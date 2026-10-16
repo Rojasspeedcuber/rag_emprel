@@ -30,15 +30,24 @@ def test_get_provider_config(monkeypatch, provider, key_name, url_name, model_na
 
 def test_get_provider_config_ollama(monkeypatch):
     monkeypatch.setattr(llm, "LLM_PROVIDER", "ollama")
-    monkeypatch.setattr(llm, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
-    monkeypatch.setattr(llm, "OLLAMA_MODEL", "qwen3:4b")
+    monkeypatch.setattr(llm, "OLLAMA_API_KEY", "ollama-key")
+    monkeypatch.setattr(llm, "OLLAMA_BASE_URL", "https://ollama.com/v1")
+    monkeypatch.setattr(llm, "OLLAMA_MODEL", "gpt-oss:120b")
 
     config = llm.get_provider_config()
 
     assert config.name == "ollama"
-    assert config.api_key  # chave fictícia aceita pelo endpoint compatível
-    assert config.base_url == "http://localhost:11434/v1"
-    assert config.model == "qwen3:4b"
+    assert config.api_key == "ollama-key"
+    assert config.base_url == "https://ollama.com/v1"
+    assert config.model == "gpt-oss:120b"
+
+
+def test_get_provider_config_ollama_requires_api_key(monkeypatch):
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(llm, "OLLAMA_API_KEY", None)
+
+    with pytest.raises(llm.LLMConfigurationError, match="OLLAMA_API_KEY"):
+        llm.get_provider_config()
 
 
 def test_get_provider_config_rejects_unknown_provider(monkeypatch):
@@ -99,7 +108,7 @@ def test_answer_question_ollama_failure_mentions_server(monkeypatch):
         raise RuntimeError("connection refused")
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=fail)))
-    config = llm.ProviderConfig("ollama", "ollama", "http://localhost:11434/v1", "qwen3:4b")
+    config = llm.ProviderConfig("ollama", "ollama-key", "https://ollama.com/v1", "gpt-oss:120b")
     monkeypatch.setattr(llm, "get_provider_config", lambda: config)
     monkeypatch.setattr(llm, "_get_client", lambda selected: client)
 

@@ -6,7 +6,7 @@ from functools import lru_cache
 import numpy as np
 from openai import OpenAI
 
-from src.config import EMBEDDING_MODEL, OLLAMA_BASE_URL
+from src.config import EMBEDDING_MODEL, OLLAMA_API_KEY, OLLAMA_BASE_URL
 
 
 def _is_ollama() -> bool:
@@ -100,7 +100,7 @@ def _load_model():
 
 @lru_cache(maxsize=1)
 def _get_ollama_client() -> OpenAI:
-    return OpenAI(api_key="ollama", base_url=OLLAMA_BASE_URL)
+    return OpenAI(api_key=OLLAMA_API_KEY or "ollama", base_url=OLLAMA_BASE_URL)
 
 
 def _ollama_encode(texts: list[str]) -> np.ndarray:

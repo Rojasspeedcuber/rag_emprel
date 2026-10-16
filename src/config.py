@@ -4,6 +4,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _load_streamlit_secrets() -> None:
+    # No Streamlit Community Cloud, as configurações ficam em Secrets (não há .env).
+    try:
+        import streamlit as st
+
+        for key in st.secrets:
+            value = st.secrets[key]
+            if isinstance(value, str) and key not in os.environ:
+                os.environ[key] = value
+    except Exception:
+        pass
+
+
+_load_streamlit_secrets()
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 SEED_DIR = BASE_DIR / os.getenv("SEED_DIR", "data/seed")
 UPLOAD_DIR = BASE_DIR / os.getenv("UPLOAD_DIR", "data/uploads")
@@ -21,8 +37,9 @@ NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 NVIDIA_LLM_MODEL = os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://ollama.com/v1").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:120b")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
