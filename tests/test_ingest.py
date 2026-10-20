@@ -99,6 +99,36 @@ def test_build_corpus_combines_seed_and_uploads(monkeypatch, tmp_path):
     assert corpus.errors == []
 
 
+def test_rebuild_embeds_only_new_chunks_and_drops_removed_ones(monkeypatch, tmp_path):
+    from src import vectorstore
+
+    seed, uploads, index = configure_document_dirs(monkeypatch, tmp_path)
+    vectorstore._get_client.cache_clear()
+    (seed / "base.pdf").write_bytes(b"base")
+    (uploads / "user.pdf").write_bytes(b"user")
+    monkeypatch.setattr(ingest, "extract_pages", lambda path: [(1, path.stem)])
+    embedded = []
+
+    def fake_embed(texts):
+        embedded.append(list(texts))
+        return np.ones((len(texts), 2), dtype="float32")
+
+    monkeypatch.setattr(ingest, "embed_documents", fake_embed)
+
+    try:
+        ingest.get_corpus(force_rebuild=True)
+        (uploads / "user.pdf").unlink()
+        (uploads / "novo.pdf").write_bytes(b"novo")
+        corpus = ingest.get_corpus(force_rebuild=True)
+
+        assert embedded == [["base", "user"], ["novo"]]
+        assert {chunk.source for chunk in corpus.chunks} == {"base.pdf", "novo.pdf"}
+        assert corpus.store.stale_ids({ingest._point_id(c) for c in corpus.chunks}) == []
+        assert corpus.store.client.count(corpus.store.collection, exact=True).count == 2
+    finally:
+        vectorstore._get_client.cache_clear()
+
+
 def test_build_corpus_reports_one_bad_pdf_and_keeps_others(monkeypatch, tmp_path):
     seed, uploads, _ = configure_document_dirs(monkeypatch, tmp_path)
     (seed / "good.pdf").write_bytes(b"good")

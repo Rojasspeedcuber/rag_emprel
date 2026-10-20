@@ -40,7 +40,7 @@ streamlit run app.py
 
 Na barra lateral, o PDF em “Documentos-base” já integra o acervo e não tem controle de exclusão. Para adicionar arquivos, selecione PDFs em “Enviar PDFs” e clique em **Adicionar ao acervo**; a seleção sozinha não os salva. Os arquivos são gravados em `data/uploads/` e o índice é reconstruído. Pergunte no chat e abra “Fontes consultadas” para examinar os trechos usados. O botão 🗑 remove um PDF enviado e reconstrói o índice; **🔄 Reindexar** força uma reconstrução.
 
-O índice em `data/index/` é reutilizado enquanto não mudarem o conteúdo ou nome dos PDFs, o modelo de embeddings e os parâmetros de divisão dos trechos. As pastas de uploads e índice, assim como `.env`, são ignoradas pelo Git. Falhas de leitura de um PDF são mostradas separadamente, sem impedir a indexação dos demais.
+Os vetores ficam em um banco **Qdrant**. Por padrão ele roda embutido em `data/index/qdrant/`, sem servidor. Ao adicionar ou remover um PDF, só os trechos novos são embedados e os obsoletos são apagados do banco; o restante é reaproveitado. Os metadados (arquivo, página e texto) ficam no próprio banco, e `data/index/chunks.json` guarda o acervo usado pela busca exata por código. Para usar um servidor Qdrant (local via Docker ou Qdrant Cloud), defina `QDRANT_URL` e, se necessário, `QDRANT_API_KEY` no `.env`. As pastas de uploads e índice, assim como `.env`, são ignoradas pelo Git. Falhas de leitura de um PDF são mostradas separadamente, sem impedir a indexação dos demais.
 
 ## Testes
 
@@ -56,6 +56,7 @@ Os testes não fazem chamadas de rede nem baixam modelos.
 
 - Os embeddings são gerados **localmente** com `paraphrase-multilingual-MiniLM-L12-v2` (configurável via `EMBEDDING_MODEL`). A primeira execução baixa o modelo; as demais usam o cache local do HuggingFace. Alternativa: defina `EMBEDDING_MODEL=ollama:<modelo>` para usar a API local do Ollama.
 - O `SIMILARITY_THRESHOLD` padrão (0.45) foi calibrado empiricamente para esse modelo: perguntas fora do acervo ficam abaixo e perguntas suportadas ficam acima. Ao trocar o modelo de embedding, recalibre (modelos como E5 comprimem as similaridades e exigem outro valor).
-- O índice FAISS é cacheado em `data/index/` e reconstruído quando muda o hash dos PDFs (seed + uploads), dos parâmetros de chunking ou do modelo de embedding.
+- O índice é revalidado a cada mudança no hash dos PDFs (seed + uploads), nos parâmetros de chunking ou no modelo de embedding. Trechos cujo ID (modelo + arquivo + página + texto) já existe no Qdrant não são re-embedados. Ao trocar o modelo de embedding, o banco é recriado automaticamente se a dimensão mudar.
+- O arquivo `data/index/index.faiss` de versões anteriores não é mais usado e pode ser apagado.
 - PDFs escaneados (sem camada de texto) não geram trechos; um PDF inválido é reportado individualmente sem invalidar os demais.
 - Perguntas sem evidência suficiente retornam exatamente `Não encontrei essa informação nos documentos enviados.` sem acionar nenhum provedor de LLM.

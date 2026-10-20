@@ -13,9 +13,9 @@ from src.retriever import (
 
 def make_corpus(empty=False, n_chunks=3):
     if empty:
-        return Corpus(chunks=[], index=None, empty=True)
+        return Corpus(chunks=[], store=None, empty=True)
     chunks = [Chunk(text=f"trecho {i}", source="doc.pdf", page=i + 1) for i in range(n_chunks)]
-    return Corpus(chunks=chunks, index=object(), empty=False)  # index mockado
+    return Corpus(chunks=chunks, store=object(), empty=False)  # store mockado
 
 
 def fake_search(corpus, query, top_k=5):
@@ -68,7 +68,7 @@ def test_code_query_returns_exact_chunk_and_drops_duplicate():
         Chunk(text="O erro E3351 significa que o registro já foi inativado", source="faq.pdf", page=21),
         Chunk(text="O erro E3351 significa que o registro já foi inativado", source="faq_copy.pdf", page=21),
     ]
-    corpus = Corpus(chunks=chunks, index=object(), empty=False)
+    corpus = Corpus(chunks=chunks, store=object(), empty=False)
 
     found, msg = retrieve(corpus, "O que significa o erro E3351?")
 

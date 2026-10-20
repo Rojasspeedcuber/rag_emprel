@@ -23,17 +23,18 @@ class RetrievedChunk:
 
 
 def _search(corpus: Corpus, query: str, top_k: int = TOP_K) -> list[RetrievedChunk]:
-    """Busca vetorial por similaridade de cosseno (IndexFlatIP com vetores L2-normalizados)."""
-    if corpus.empty or corpus.index is None:
+    """Busca vetorial por similaridade de cosseno no banco vetorial (vetores L2-normalizados)."""
+    if corpus.empty or corpus.store is None:
         return []
-    q = embed_query(query)
-    k = min(top_k, len(corpus.chunks))
-    scores, indices = corpus.index.search(q, k)
-    results = []
-    for score, idx in zip(scores[0], indices[0]):
-        if idx != -1:
-            results.append(RetrievedChunk(chunk=corpus.chunks[idx], similarity=float(score)))
-    return results
+    q = embed_query(query)[0].tolist()
+    hits = corpus.store.search(q, limit=min(top_k, len(corpus.chunks)))
+    return [
+        RetrievedChunk(
+            chunk=Chunk(text=payload["text"], source=payload["source"], page=payload["page"]),
+            similarity=float(score),
+        )
+        for score, payload in hits
+    ]
 
 
 def _codes(text: str) -> list[str]:

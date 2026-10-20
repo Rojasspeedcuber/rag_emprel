@@ -1,11 +1,10 @@
 import re
 import hashlib
 import json
+import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
-import faiss
-import numpy as np
 from pypdf import PdfReader
 
 from src.config import (
@@ -17,6 +16,7 @@ from src.config import (
     EMBEDDING_MODEL,
 )
 from src.embeddings import embed_documents
+from src.vectorstore import VectorStore
 
 ARGS_STR_CHARS = 4  # ~1 token ≈ 4 chars
 
@@ -31,7 +31,7 @@ class Chunk:
 @dataclass
 class Corpus:
     chunks: list[Chunk] = field(default_factory=list)
-    index: faiss.IndexFlatIP | None = None
+    store: VectorStore | None = None
     empty: bool = True
     errors: list[str] = field(default_factory=list)
 
@@ -129,6 +129,31 @@ def _files_hash() -> str:
     return digest.hexdigest()
 
 
+def _point_id(chunk: Chunk) -> str:
+    """ID estável por trecho: muda com modelo, arquivo, página ou texto, e permite reaproveitar vetores."""
+    digest = hashlib.sha256()
+    for value in (EMBEDDING_MODEL, chunk.source, str(chunk.page), chunk.text):
+        digest.update(value.encode("utf-8"))
+        digest.update(b"\x1f")
+    return str(uuid.UUID(hex=digest.hexdigest()[:32]))
+
+
+def _sync_store(chunks: list[Chunk]) -> VectorStore:
+    """Deixa o banco vetorial igual aos trechos atuais: embeda só o que é novo e remove o obsoleto."""
+    store = VectorStore(INDEX_DIR)
+    ids = [_point_id(chunk) for chunk in chunks]
+    existing = store.existing_ids(ids)
+    pending: dict[str, Chunk] = {}
+    for chunk, point_id in zip(chunks, ids):
+        if point_id not in existing:
+            pending.setdefault(point_id, chunk)
+    if pending:
+        vectors = embed_documents([chunk.text for chunk in pending.values()])
+        store.upsert(list(pending), vectors, [asdict(chunk) for chunk in pending.values()])
+    store.delete(store.stale_ids(set(ids)))
+    return store
+
+
 def build_corpus() -> Corpus:
     """(Re)constrói o corpus a partir de SEED_DIR + UPLOAD_DIR. Não aborta por um PDF inválido."""
     chunks: list[Chunk] = []
@@ -141,13 +166,13 @@ def build_corpus() -> Corpus:
         except Exception as exc:
             errors.append(f"{pdf_path.name}: {exc}")
 
-    index = None
-    if chunks:
-        vectors = embed_documents([chunk.text for chunk in chunks])
-        index = faiss.IndexFlatIP(vectors.shape[1])
-        index.add(vectors)
-
-    return Corpus(chunks=chunks, index=index, empty=not chunks, errors=errors)
+    store = _sync_store(chunks)
+    return Corpus(
+        chunks=chunks,
+        store=store if chunks else None,
+        empty=not chunks,
+        errors=errors,
+    )
 
 
 def _save_corpus(corpus: Corpus) -> None:
@@ -160,16 +185,11 @@ def _save_corpus(corpus: Corpus) -> None:
         json.dumps(corpus.errors, ensure_ascii=False),
         encoding="utf-8",
     )
-    if corpus.index is not None:
-        faiss.write_index(corpus.index, str(INDEX_DIR / "index.faiss"))
-    elif (INDEX_DIR / "index.faiss").exists():
-        (INDEX_DIR / "index.faiss").unlink()
 
 
 def _load_cached_corpus() -> Corpus | None:
     chunks_file = INDEX_DIR / "chunks.json"
     hash_file = INDEX_DIR / "files.hash"
-    index_file = INDEX_DIR / "index.faiss"
     if not (chunks_file.exists() and hash_file.exists()):
         return None
     if hash_file.read_text(encoding="utf-8") != _files_hash():
@@ -181,10 +201,12 @@ def _load_cached_corpus() -> Corpus | None:
         if errors_file.exists()
         else []
     )
-    if chunks and index_file.exists():
-        index = faiss.read_index(str(index_file))
-        return Corpus(chunks=chunks, index=index, empty=False, errors=errors)
-    return Corpus(chunks=[], index=None, empty=True, errors=errors)
+    if not chunks:
+        return Corpus(chunks=[], store=None, empty=True, errors=errors)
+    store = VectorStore(INDEX_DIR)
+    if not store.is_populated():
+        return None
+    return Corpus(chunks=chunks, store=store, empty=False, errors=errors)
 
 
 def get_corpus(force_rebuild: bool = False) -> Corpus:

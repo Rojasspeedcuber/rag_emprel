@@ -27,6 +27,10 @@ INDEX_DIR = BASE_DIR / os.getenv("INDEX_DIR", "data/index")
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
+QDRANT_URL = os.getenv("QDRANT_URL", "").strip() or None
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY") or None
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "rag_chunks")
+
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
