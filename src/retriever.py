@@ -3,17 +3,20 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from src.config import (
-    TOP_K,
-    SIMILARITY_THRESHOLD,
-)
+from src.config import TOP_K
 from src.embeddings import embed_query
 from src.ingest import Corpus, Chunk
 
 _CODE = re.compile(r"\b[A-Z]{1,4}\d{2,6}\b", re.IGNORECASE)
+_ACRONYM = re.compile(r"\b[A-Z]{2,6}\b")
+_COMMON_CAPS = {
+    "DE", "DO", "DA", "EM", "NO", "NA", "UM", "UMA", "SE", "SIM", "NAO", "QUE", "COMO",
+    "PARA", "POR", "QUAL", "QUAIS", "ONDE", "QUANDO", "MEU", "MINHA", "ME",
+}
+_ACRONYM_HITS = 2
 
-FALLBACK_MESSAGE = "Não encontrei essa informação nos documentos enviados."
 EMPTY_CORPUS_MESSAGE = "Nenhum documento foi enviado ainda. Envie PDFs pela barra lateral para começar."
+FALLBACK_MESSAGE = "Não encontrei essa informação nos documentos enviados."
 
 
 @dataclass
@@ -46,6 +49,15 @@ def _codes(text: str) -> list[str]:
     return found
 
 
+def _acronyms(text: str) -> list[str]:
+    found = []
+    for match in _ACRONYM.finditer(text):
+        term = match.group(0)
+        if term not in _COMMON_CAPS and term not in found:
+            found.append(term)
+    return found
+
+
 def _dedupe(results: list[RetrievedChunk]) -> list[RetrievedChunk]:
     seen = set()
     unique = []
@@ -58,40 +70,38 @@ def _dedupe(results: list[RetrievedChunk]) -> list[RetrievedChunk]:
     return unique
 
 
-def _lexical(corpus: Corpus, codes: list[str]) -> list[RetrievedChunk]:
+def _lexical(corpus: Corpus, terms: list[str]) -> list[RetrievedChunk]:
+    patterns = [re.compile(rf"(?<![A-Z0-9]){re.escape(term)}(?![A-Z0-9])") for term in terms]
     scored = []
     for chunk in corpus.chunks:
         text = chunk.text.upper()
-        count = sum(text.count(code) for code in codes)
+        count = sum(len(pattern.findall(text)) for pattern in patterns)
         if count:
             scored.append((count, RetrievedChunk(chunk=chunk, similarity=1.0)))
     scored.sort(key=lambda item: item[0], reverse=True)
     return _dedupe([item[1] for item in scored])
 
 
-def retrieve(corpus: Corpus, query: str) -> tuple[list[RetrievedChunk], str | None]:
+def retrieve(corpus: Corpus, query: str) -> list[RetrievedChunk]:
     """
-    Retorna (trechos, mensagem_de_fallback).
-    - corpus vazio → ([], EMPTY_CORPUS_MESSAGE)
-    - código exato no texto → trechos que contêm o código, sem limiar vetorial
-    - abaixo do limiar → ([], FALLBACK_MESSAGE)
-    - caso contrário → (trechos, None)
+    Retorna sempre os trechos mais relevantes para a pergunta, sem recusar por limiar.
+    - código exato no texto → trechos que contêm o código
+    - sigla da pergunta no texto → até 2 trechos com a sigla, seguidos da busca vetorial
+    - caso contrário → busca vetorial
     """
     if corpus.empty:
-        return [], EMPTY_CORPUS_MESSAGE
+        return []
 
     codes = _codes(query)
     if codes:
         lexical = _lexical(corpus, codes)[:TOP_K]
         if lexical:
-            return lexical, None
+            return lexical
 
-    results = _dedupe(_search(corpus, query, top_k=TOP_K * 3))[:TOP_K]
-    if not results:
-        return [], FALLBACK_MESSAGE
+    results = _dedupe(_search(corpus, query, top_k=TOP_K * 3))
 
-    best = max(r.similarity for r in results)
-    if best < SIMILARITY_THRESHOLD:
-        return [], FALLBACK_MESSAGE
+    acronyms = _acronyms(query)
+    if acronyms:
+        results = _dedupe(_lexical(corpus, acronyms)[:_ACRONYM_HITS] + results)
 
-    return results, None
+    return results[:TOP_K]

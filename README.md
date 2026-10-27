@@ -1,12 +1,12 @@
 # rag_emprel
 
-Chat RAG (Retrieval-Augmented Generation) em Streamlit para perguntar sobre PDFs, com **não alucinação**: só responde com base nos trechos recuperados dos documentos, cita as fontes e diz "Não encontrei essa informação nos documentos enviados." quando não há base. As respostas são geradas pelo provedor escolhido no `.env` (OpenRouter, NVIDIA NIM, OpenAI ou Ollama).
+Chat RAG (Retrieval-Augmented Generation) em Streamlit para perguntar sobre PDFs, com **não alucinação**: só responde com base nos trechos recuperados dos documentos, cita as fontes e diz "Não encontrei essa informação nos documentos enviados." para perguntas fora do tema. As respostas são geradas pelo provedor escolhido no `.env` (OpenRouter, NVIDIA NIM, OpenAI ou Ollama).
 
-## Guardrails anti-alucinação
+## Guardrails
 
 1. **Contexto fechado** — o LLM recebe apenas os trechos recuperados dos seus PDFs
 2. **Prompt estrito** — proíbe uso de conhecimento externo, trata instruções nos documentos como dados e exige citação `[arquivo, p. N]`
-3. **Recusa determinística** — pergunta sem evidência suficiente acima do limiar retorna a mensagem fixa **antes** de qualquer chamada ao LLM
+3. **Recusa determinística** — pergunta fora do tema (similaridade máxima abaixo de `SIMILARITY_THRESHOLD`, padrão 0.40) retorna a mensagem fixa **antes** de qualquer chamada ao LLM. Busca exata por código ou sigla presente no documento sempre passa
 4. **Erros de provedor não viram resposta** — falha de API gera mensagem de indisponibilidade, nunca conteúdo improvisado
 5. **Decodificação determinística** — `temperature=0`, `top_p=0.1`
 6. **Transparência** — cada resposta exibe os trechos-fonte (arquivo e página) para auditoria
@@ -55,8 +55,8 @@ Os testes não fazem chamadas de rede nem baixam modelos.
 ## Observações
 
 - Os embeddings são gerados **localmente** com `paraphrase-multilingual-MiniLM-L12-v2` (configurável via `EMBEDDING_MODEL`). A primeira execução baixa o modelo; as demais usam o cache local do HuggingFace. Alternativa: defina `EMBEDDING_MODEL=ollama:<modelo>` para usar a API local do Ollama.
-- O `SIMILARITY_THRESHOLD` padrão (0.45) foi calibrado empiricamente para esse modelo: perguntas fora do acervo ficam abaixo e perguntas suportadas ficam acima. Ao trocar o modelo de embedding, recalibre (modelos como E5 comprimem as similaridades e exigem outro valor).
 - O índice é revalidado a cada mudança no hash dos PDFs (seed + uploads), nos parâmetros de chunking ou no modelo de embedding. Trechos cujo ID (modelo + arquivo + página + texto) já existe no Qdrant não são re-embedados. Ao trocar o modelo de embedding, o banco é recriado automaticamente se a dimensão mudar.
 - O arquivo `data/index/index.faiss` de versões anteriores não é mais usado e pode ser apagado.
 - PDFs escaneados (sem camada de texto) não geram trechos; um PDF inválido é reportado individualmente sem invalidar os demais.
-- Perguntas sem evidência suficiente retornam exatamente `Não encontrei essa informação nos documentos enviados.` sem acionar nenhum provedor de LLM.
+- O `SIMILARITY_THRESHOLD` padrão (0.40) foi calibrado com o MiniLM: perguntas fora do tema ficaram até 0.35 e perguntas do acervo a partir de 0.46 (exceto as que usam sigla exata, aceitas pela busca lexical). Ao trocar o modelo de embedding, recalibre.
+- Perguntas sem relação com os trechos recuperados também podem receber a mesma mensagem fixa pelo próprio LLM, conforme o prompt.

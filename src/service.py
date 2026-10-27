@@ -1,8 +1,9 @@
 from dataclasses import dataclass, field
 
+from src.config import SIMILARITY_THRESHOLD
 from src.ingest import Corpus
 from src.llm import answer_question
-from src.retriever import retrieve
+from src.retriever import EMPTY_CORPUS_MESSAGE, FALLBACK_MESSAGE, retrieve
 
 
 @dataclass(frozen=True)
@@ -12,10 +13,13 @@ class AnswerResult:
 
 
 def answer(corpus: Corpus, question: str, history: list[dict] | None = None) -> AnswerResult:
-    """Orquestra recuperação e geração. Sem evidência suficiente, recusa antes do LLM."""
-    retrieved, fallback = retrieve(corpus, question)
-    if fallback is not None:
-        return AnswerResult(content=fallback)
+    """Orquestra recuperação e geração. Pergunta fora do tema é recusada antes do LLM."""
+    retrieved = retrieve(corpus, question)
+    if not retrieved:
+        return AnswerResult(content=EMPTY_CORPUS_MESSAGE)
+    # Trechos lexicais (código ou sigla exata) têm similaridade 1.0 e sempre passam.
+    if max(item.similarity for item in retrieved) < SIMILARITY_THRESHOLD:
+        return AnswerResult(content=FALLBACK_MESSAGE)
     content = answer_question(question, retrieved, history=history)
     sources = [
         {

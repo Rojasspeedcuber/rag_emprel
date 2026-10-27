@@ -1,14 +1,7 @@
 from unittest.mock import patch
 
-import numpy as np
-
 from src.ingest import Chunk, Corpus
-from src.retriever import (
-    retrieve,
-    FALLBACK_MESSAGE,
-    EMPTY_CORPUS_MESSAGE,
-    RetrievedChunk,
-)
+from src.retriever import retrieve, RetrievedChunk
 
 
 def make_corpus(empty=False, n_chunks=3):
@@ -19,7 +12,6 @@ def make_corpus(empty=False, n_chunks=3):
 
 
 def fake_search(corpus, query, top_k=5):
-    # similaridades controladas para testes de limiar
     return [
         RetrievedChunk(chunk=Chunk(text="t1", source="d.pdf", page=1), similarity=0.9),
         RetrievedChunk(chunk=Chunk(text="t2", source="d.pdf", page=2), similarity=0.5),
@@ -34,31 +26,26 @@ def fake_search_no_results(corpus, query, top_k=5):
     return []
 
 
-def test_empty_corpus_returns_empty_message():
-    chunks, msg = retrieve(make_corpus(empty=True), "pergunta")
-    assert chunks == []
-    assert msg == EMPTY_CORPUS_MESSAGE
+def test_empty_corpus_returns_nothing():
+    assert retrieve(make_corpus(empty=True), "pergunta") == []
 
 
-def test_no_results_returns_fallback():
+def test_no_semantic_results_returns_empty_list():
     with patch("src.retriever._search", fake_search_no_results):
-        chunks, msg = retrieve(make_corpus(), "pergunta")
-    assert chunks == []
-    assert msg == FALLBACK_MESSAGE
+        assert retrieve(make_corpus(), "pergunta") == []
 
 
-def test_below_threshold_returns_fallback():
+def test_low_similarity_still_returns_best_chunks():
     with patch("src.retriever._search", fake_search_low_similarity):
-        chunks, msg = retrieve(make_corpus(), "pergunta")
-    assert chunks == []
-    assert msg == FALLBACK_MESSAGE
+        chunks = retrieve(make_corpus(), "pergunta")
+
+    assert [chunk.similarity for chunk in chunks] == [0.1]
 
 
-def test_above_threshold_returns_ranked_chunks():
+def test_returns_ranked_chunks():
     with patch("src.retriever._search", fake_search):
-        chunks, msg = retrieve(make_corpus(), "pergunta")
+        chunks = retrieve(make_corpus(), "pergunta")
 
-    assert msg is None
     assert [chunk.similarity for chunk in chunks] == [0.9, 0.5]
 
 
@@ -70,20 +57,18 @@ def test_code_query_returns_exact_chunk_and_drops_duplicate():
     ]
     corpus = Corpus(chunks=chunks, store=object(), empty=False)
 
-    found, msg = retrieve(corpus, "O que significa o erro E3351?")
+    found = retrieve(corpus, "O que significa o erro E3351?")
 
-    assert msg is None
     assert len(found) == 1
     assert found[0].chunk.page == 21
     assert "E3351" in found[0].chunk.text
 
 
-def test_missing_code_falls_back_to_semantic_threshold():
+def test_missing_code_falls_back_to_semantic_results():
     with patch("src.retriever._search", fake_search_low_similarity):
-        chunks, msg = retrieve(make_corpus(), "O que significa o erro E9999?")
+        chunks = retrieve(make_corpus(), "O que significa o erro E9999?")
 
-    assert chunks == []
-    assert msg == FALLBACK_MESSAGE
+    assert [chunk.chunk.text for chunk in chunks] == ["t"]
 
 
 def test_semantic_results_drop_duplicate_text():
@@ -93,22 +78,28 @@ def test_semantic_results_drop_duplicate_text():
         RetrievedChunk(chunk=Chunk(text="outro", source="a.pdf", page=2), similarity=0.6),
     ]
     with patch("src.retriever._search", return_value=duplicated):
-        found, msg = retrieve(make_corpus(), "pergunta")
+        found = retrieve(make_corpus(), "pergunta")
 
-    assert msg is None
     assert [item.chunk.text for item in found] == ["mesmo", "outro"]
 
 
-def test_threshold_accepts_exact_boundary():
-    boundary = [
-        RetrievedChunk(
-            chunk=Chunk(text="t", source="d.pdf", page=1),
-            similarity=0.35,
-        )
+def test_acronym_question_includes_exact_term_chunk_first():
+    chunks = [
+        Chunk(text="Texto geral sobre emissão de notas.", source="a.pdf", page=2),
+        Chunk(text="O que é o ADN e o que significa ambGer na nota?", source="a.pdf", page=41),
+        Chunk(text="CADNASTRO não é a sigla pesquisada", source="a.pdf", page=3),
     ]
-    with patch("src.retriever._search", return_value=boundary), \
-         patch("src.retriever.SIMILARITY_THRESHOLD", 0.35):
-        chunks, msg = retrieve(make_corpus(), "pergunta")
+    corpus = Corpus(chunks=chunks, store=object(), empty=False)
+    semantic = [RetrievedChunk(chunk=chunks[0], similarity=0.2)]
 
-    assert chunks == boundary
-    assert msg is None
+    with patch("src.retriever._search", return_value=semantic):
+        found = retrieve(corpus, "O que é ADN?")
+
+    assert [item.chunk.page for item in found] == [41, 2]
+
+
+def test_acronym_absent_from_documents_still_returns_semantic_results():
+    with patch("src.retriever._search", fake_search_low_similarity):
+        chunks = retrieve(make_corpus(), "O que é XYZW?")
+
+    assert [chunk.chunk.text for chunk in chunks] == ["t"]
