@@ -5,15 +5,56 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+_SECRET_SECTION_KEYS = {
+    "retrieval": {
+        "chunk_size": "CHUNK_SIZE",
+        "chunk_overlap": "CHUNK_OVERLAP",
+        "top_k": "TOP_K",
+        "similarity_threshold": "SIMILARITY_THRESHOLD",
+    },
+    "generation": {"temperature": "TEMPERATURE", "top_p": "TOP_P"},
+    "llm": {"provider": "LLM_PROVIDER"},
+    "embedding": {"model": "EMBEDDING_MODEL"},
+    "directories": {"seed_dir": "SEED_DIR", "upload_dir": "UPLOAD_DIR", "index_dir": "INDEX_DIR"},
+}
+_PROVIDER_SECTIONS = ("openrouter", "nvidia", "openai", "ollama")
+
+
+def _secret_env_pairs(secrets) -> list[tuple[str, str]]:
+    pairs = []
+    for key in secrets:
+        value = secrets[key]
+        if isinstance(value, (str, int, float)):
+            pairs.append((key, str(value)))
+            continue
+        if key in _SECRET_SECTION_KEYS:
+            mapping = _SECRET_SECTION_KEYS[key]
+        elif key in _PROVIDER_SECTIONS:
+            mapping = None
+        else:
+            continue
+        for subkey in value:
+            subvalue = value[subkey]
+            if not isinstance(subvalue, (str, int, float)):
+                continue
+            env_name = mapping.get(subkey) if mapping else f"{key}_{subkey}".upper()
+            if env_name:
+                pairs.append((env_name, str(subvalue)))
+    return pairs
+
+
+def _apply_secrets(secrets) -> None:
+    for name, value in _secret_env_pairs(secrets):
+        if value != "" and name not in os.environ:
+            os.environ[name] = value
+
+
 def _load_streamlit_secrets() -> None:
     # No Streamlit Community Cloud, as configurações ficam em Secrets (não há .env).
     try:
         import streamlit as st
 
-        for key in st.secrets:
-            value = st.secrets[key]
-            if isinstance(value, str) and key not in os.environ:
-                os.environ[key] = value
+        _apply_secrets(st.secrets)
     except Exception:
         pass
 
