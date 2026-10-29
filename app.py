@@ -10,6 +10,7 @@ from src.ingest import (
 )
 from src.llm import LLMConfigurationError, LLMProviderError
 from src.service import answer
+from src.voice import speak_button, voice_input
 
 st.set_page_config(page_title="RAG Emprel", page_icon="📄", layout="centered")
 
@@ -29,6 +30,11 @@ st.title("📄 Chat RAG — Pergunte aos seus PDFs")
 with st.sidebar:
     st.header("📚 Documentos")
     st.caption(f"Provedor de respostas: {LLM_PROVIDER}")
+    st.toggle(
+        "🔊 Ler respostas em voz alta",
+        key="auto_read",
+        help="Lê automaticamente cada nova resposta. Também é possível ouvir cada resposta pelo botão abaixo dela.",
+    )
 
     uploaded = st.file_uploader(
         "Enviar PDFs",
@@ -74,9 +80,11 @@ with st.sidebar:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for message in st.session_state.messages:
+for index, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        if message["role"] == "assistant":
+            speak_button(message["content"], key=f"speak_{index}")
         if message.get("sources"):
             with st.expander("Fontes consultadas"):
                 for source in message["sources"]:
@@ -86,10 +94,16 @@ for message in st.session_state.messages:
 if corpus.empty:
     st.info("Nenhum documento com texto extraível foi encontrado.")
 
+spoken = voice_input(key="voice_input", disabled=corpus.empty)
+voice_question = None
+if spoken and spoken["nonce"] != st.session_state.get("last_voice_nonce"):
+    st.session_state.last_voice_nonce = spoken["nonce"]
+    voice_question = spoken["text"]
+
 question = st.chat_input(
     "Faça uma pergunta sobre os documentos...",
     disabled=corpus.empty,
-)
+) or voice_question
 if question:
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
@@ -111,6 +125,11 @@ if question:
                 sources = result.sources
 
         st.markdown(result_content)
+        speak_button(
+            result_content,
+            key=f"speak_{len(st.session_state.messages)}",
+            autoplay=st.session_state.get("auto_read", False),
+        )
         if sources:
             with st.expander("Fontes consultadas"):
                 for source in sources:

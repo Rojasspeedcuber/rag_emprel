@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --fg: #31333f;
+    --bg: #ffffff;
+    --border: #d0d3dc;
+    --focus: #1f6feb;
+  }
+  body {
+    margin: 0;
+    font-family: "Source Sans Pro", "Segoe UI", sans-serif;
+    font-size: 15px;
+    color: var(--fg);
+    background: transparent;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  button {
+    font: inherit;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) {
+    border-color: var(--focus);
+  }
+  button:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .status {
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div id="root" class="row"></div>
+<script>
+(function () {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const hasTTS = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  const CHUNK_LIMIT = 200;
+
+  const ERROR_MESSAGES = {
+    "no-speech": "Nenhuma fala detectada. Tente novamente.",
+    "not-allowed": "Permissão de microfone negada. Libere o microfone para este site.",
+    "service-not-allowed": "Permissão de microfone negada. Libere o microfone para este site.",
+    "audio-capture": "Nenhum microfone encontrado.",
+    "network": "Falha de rede no serviço de reconhecimento de voz.",
+  };
+
+  const state = {
+    mode: null,
+    listening: false,
+    recognition: null,
+    text: "",
+    lastAutoText: null,
+    ui: {},
+  };
+
+  function send(type, extra) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, extra || {}), "*");
+  }
+
+  function setHeight() {
+    requestAnimationFrame(function () {
+      send("streamlit:setFrameHeight", { height: Math.ceil(document.body.scrollHeight) + 4 });
+    });
+  }
+
+  function applyTheme(theme) {
+    if (!theme) return;
+    const root = document.documentElement.style;
+    if (theme.textColor) root.setProperty("--fg", theme.textColor);
+    if (theme.backgroundColor) root.setProperty("--bg", theme.secondaryBackgroundColor || theme.backgroundColor);
+    if (theme.primaryColor) root.setProperty("--focus", theme.primaryColor);
+  }
+
+  function setLabel(button, icon, text) {
+    button.textContent = "";
+    const iconSpan = document.createElement("span");
+    iconSpan.setAttribute("aria-hidden", "true");
+    iconSpan.textContent = icon;
+    button.append(iconSpan, " " + text);
+  }
+
+  function setStatus(text) {
+    state.ui.status.textContent = text;
+  }
+
+  function pickVoice() {
+    const voices = window.speechSynthesis.getVoices();
+    return voices.find((v) => v.lang.toLowerCase() === "pt-br")
+      || voices.find((v) => v.lang.toLowerCase().startsWith("pt"))
+      || null;
+  }
+
+  function splitForSpeech(text) {
+    const sentences = text.split(/(?<=[.!?;:])\s+/);
+    const chunks = [];
+    let current = "";
+    sentences.forEach(function (sentence) {
+      if ((current + " " + sentence).trim().length > CHUNK_LIMIT && current) {
+        chunks.push(current.trim());
+        current = sentence;
+      } else {
+        current = current + " " + sentence;
+      }
+    });
+    if (current.trim()) chunks.push(current.trim());
+    return chunks;
+  }
+
+  function stopSpeech() {
+    if (hasTTS) window.speechSynthesis.cancel();
+  }
+
+  function speak(text) {
+    if (!hasTTS || !text) return;
+    stopSpeech();
+    const voice = pickVoice();
+    splitForSpeech(text).forEach(function (chunk) {
+      const utterance = new SpeechSynthesisUtterance(chunk);
+      utterance.lang = "pt-BR";
+      if (voice) utterance.voice = voice;
+      window.speechSynthesis.speak(utterance);
+    });
+  }
+
+  function startListening() {
+    if (!Recognition) return;
+    stopSpeech();
+    const recognition = new Recognition();
+    recognition.lang = "pt-BR";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    let gotResult = false;
+    let failed = false;
+
+    recognition.onstart = function () {
+      state.listening = true;
+      setLabel(state.ui.button, "⏹", "Parar escuta");
+      setStatus("Ouvindo. Fale sua pergunta.");
+    };
+    recognition.onresult = function (event) {
+      gotResult = true;
+      const text = event.results[0][0].transcript.trim();
+      setStatus("Pergunta captada: " + text + ". Buscando resposta...");
+      send("streamlit:setComponentValue", {
+        value: { text: text, nonce: Date.now() },
+        dataType: "json",
+      });
+    };
+    recognition.onerror = function (event) {
+      if (event.error === "aborted") return;
+      failed = true;
+      setStatus(ERROR_MESSAGES[event.error] || "Erro no reconhecimento de voz: " + event.error);
+    };
+    recognition.onend = function () {
+      state.listening = false;
+      state.recognition = null;
+      setLabel(state.ui.button, "🎤", "Falar pergunta");
+      if (!gotResult && !failed) setStatus("Nenhuma fala captada. Tente novamente.");
+    };
+
+    state.recognition = recognition;
+    recognition.start();
+  }
+
+  function buildInput() {
+    const button = document.createElement("button");
+    button.type = "button";
+    setLabel(button, "🎤", "Falar pergunta");
+    button.setAttribute("aria-describedby", "voice-status");
+
+    const status = document.createElement("span");
+    status.className = "status";
+    status.id = "voice-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+
+    button.addEventListener("click", function () {
+      if (state.listening && state.recognition) {
+        state.recognition.stop();
+      } else {
+        startListening();
+      }
+    });
+
+    state.ui = { button: button, status: status };
+    document.getElementById("root").append(button, status);
+
+    if (!Recognition) {
+      button.disabled = true;
+      setStatus("Reconhecimento de voz indisponível neste navegador. Use o Chrome ou o Edge.");
+    }
+  }
+
+  function buildSpeak() {
+    const listenButton = document.createElement("button");
+    listenButton.type = "button";
+    setLabel(listenButton, "🔊", "Ouvir resposta");
+    listenButton.addEventListener("click", function () {
+      speak(state.text);
+    });
+
+    const stopButton = document.createElement("button");
+    stopButton.type = "button";
+    setLabel(stopButton, "⏹", "Parar leitura");
+    stopButton.addEventListener("click", stopSpeech);
+
+    state.ui = { listenButton: listenButton, stopButton: stopButton };
+    document.getElementById("root").append(listenButton, stopButton);
+
+    if (!hasTTS) {
+      listenButton.disabled = true;
+      stopButton.disabled = true;
+      listenButton.title = "Leitura em voz indisponível neste navegador.";
+    }
+  }
+
+  function updateInput(args) {
+    state.ui.button.disabled = !Recognition || !!args.disabled;
+  }
+
+  function updateSpeak(args) {
+    state.text = args.text || "";
+    if (args.autoplay && state.text && state.text !== state.lastAutoText) {
+      state.lastAutoText = state.text;
+      speak(state.text);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    const data = event.data;
+    if (!data || data.type !== "streamlit:render") return;
+    const args = data.args || {};
+    if (!state.mode) {
+      state.mode = args.mode;
+      if (state.mode === "input") buildInput();
+      else buildSpeak();
+    }
+    applyTheme(data.theme);
+    if (state.mode === "input") updateInput(args);
+    else updateSpeak(args);
+    setHeight();
+  });
+
+  send("streamlit:componentReady", { apiVersion: 1 });
+  setHeight();
+})();
+</script>
+</body>
+</html>

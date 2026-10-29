@@ -42,6 +42,27 @@ Na barra lateral, o PDF em “Documentos-base” já integra o acervo e não tem
 
 Os vetores ficam em um banco **Qdrant**. Por padrão ele roda embutido em `data/index/qdrant/`, sem servidor. Ao adicionar ou remover um PDF, só os trechos novos são embedados e os obsoletos são apagados do banco; o restante é reaproveitado. Os metadados (arquivo, página e texto) ficam no próprio banco, e `data/index/chunks.json` guarda o acervo usado pela busca exata por código. Para usar um servidor Qdrant (local via Docker ou Qdrant Cloud), defina `QDRANT_URL` e, se necessário, `QDRANT_API_KEY` no `.env`. As pastas de uploads e índice, assim como `.env`, são ignoradas pelo Git. Falhas de leitura de um PDF são mostradas separadamente, sem impedir a indexação dos demais.
 
+### Acessibilidade por voz
+
+- **Perguntar por voz**: o botão 🎤 **Falar pergunta**, acima da caixa de texto, capta a fala em português (pt-BR) e envia a pergunta ao chat.
+- **Ouvir respostas**: cada resposta tem o botão 🔊 **Ouvir resposta** (e ⏹ **Parar leitura**). Para ler automaticamente cada nova resposta, ative **Ler respostas em voz alta** na barra lateral.
+
+Os recursos usam a Web Speech API do navegador, sem chave de API: funcionam no Google Chrome e no Microsoft Edge (o reconhecimento de voz depende de conexão com a internet e o navegador precisa de permissão para o microfone). A leitura usa a voz em português instalada no sistema operacional.
+
+### Deploy no Streamlit Community Cloud
+
+O Qdrant embutido não deve ser usado no Streamlit Cloud: o app recarrega módulos quando o código é atualizado e o arquivo de índice fica travado pelo processo anterior, causando o erro “Storage folder ... is already accessed”. Use um servidor Qdrant:
+
+1. Crie um cluster gratuito no [Qdrant Cloud](https://cloud.qdrant.io) e copie a URL do cluster e uma API key.
+2. No painel do app, em **Settings → Secrets**, adicione:
+
+   ```toml
+   QDRANT_URL = "https://seu-cluster.cloud.qdrant.io:6333"
+   QDRANT_API_KEY = "sua-api-key"
+   ```
+
+3. Salve e reinicie o app. O índice será reconstruído no novo servidor na primeira execução.
+
 ## Testes
 
 Com as dependências instaladas no ambiente virtual, execute na raiz:
